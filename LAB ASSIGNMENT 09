@@ -1,0 +1,274 @@
+#include <stdio.h>
+
+#define DATA_FILE   "field_data.txt"    
+#define REPORT_FILE "field_report.txt"
+#define MAX_READINGS 100              
+
+#define MOISTURE_LOW      30.0  
+#define MOISTURE_CRITICAL 15.0   
+
+struct Reading {
+    int   id;
+    float moisture;     
+    float temperature;   
+    float humidity;      
+    int   health;        
+    double latitude;     
+    double longitude;          
+};
+int  loadReadings(struct Reading r[]);
+void addReading(void);
+void viewAllReadings(void);
+void findIrrigationAreas(void);
+void writeReport(FILE *out, struct Reading r[], int n);
+void generateReport(void);
+const char *healthStatus(int health);
+
+int main(void)
+{
+    int choice;
+ do {
+        printf(" AGRICULTURAL ROBOT DATA SYSTEM ");
+        printf("1. Add new reading\n");
+        printf("2. View all readings\n");
+        printf("3. Find areas needing irrigation\n");
+        printf("4. Generate field monitoring report\n");
+        printf("5. Exit\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1: addReading();          break;
+            case 2: viewAllReadings();     break;
+            case 3: findIrrigationAreas(); break;
+            case 4: generateReport();      break;
+            case 5: printf("Goodbye!\n");  break;
+            default: printf("Invalid choice. Try again.\n");
+        }
+    } while (choice != 5);
+
+    return 0;
+}
+int loadReadings(struct Reading r[])
+{
+    FILE *fp = fopen(DATA_FILE, "r");
+    int count = 0;
+
+    if (fp == NULL) {
+        return 0;   /* file does not exist yet -> no data */
+ }
+ while (count < MAX_READINGS &&
+           fscanf(fp, "%d %f %f %f %d %lf %lf",
+                  &r[count].id,
+                  &r[count].moisture,
+                  &r[count].temperature,
+                  &r[count].humidity,
+                  &r[count].health,
+                  &r[count].latitude,
+                  &r[count].longitude) == 7) {
+        count++;
+    }
+
+    fclose(fp);
+    return count;
+}
+void addReading(void)
+{
+    struct Reading r[MAX_READINGS];
+    struct Reading n;
+    int count = loadReadings(r);
+    FILE *fp;
+
+    if (count >= MAX_READINGS) {
+        printf("Storage full! Cannot add more readings.\n");
+        return; }
+   n.id = count + 1;   /* next ID */
+
+    printf(" Enter reading #%d ", n.id);
+
+    printf("Soil moisture (0-100 %%): ");
+    scanf("%f", &n.moisture);
+    while (n.moisture < 0 || n.moisture > 100) {
+        printf("Invalid! Enter between 0 and 100: ");
+        scanf("%f", &n.moisture);
+    }
+
+    printf("Temperature (deg C): ");
+    scanf("%f", &n.temperature);
+
+    printf("Humidity (0-100 %%): ");
+    scanf("%f", &n.humidity);
+    while (n.humidity < 0 || n.humidity > 100) {
+        printf("Invalid! Enter between 0 and 100: ");
+        scanf("%f", &n.humidity);
+    }
+
+    printf("Crop health score (0-100): ");
+    scanf("%d", &n.health);
+    while (n.health < 0 || n.health > 100) {
+        printf("Invalid! Enter between 0 and 100: ");
+        scanf("%d", &n.health);
+    }
+
+    printf("GPS latitude: ");
+    scanf("%lf", &n.latitude);
+    printf("GPS longitude: ");
+    scanf("%lf", &n.longitude);
+
+    fp = fopen(DATA_FILE, "a");   /* "a" = append at end of file */
+    if (fp == NULL) {
+        printf("Error: could not open data file!\n");
+        return;
+    }
+    fprintf(fp, "%d %.2f %.2f %.2f %d %.6f %.6f\n",
+            n.id, n.moisture, n.temperature, n.humidity,
+            n.health, n.latitude, n.longitude);
+    fclose(fp);
+
+    printf("Reading saved successfully!\n"); }
+void viewAllReadings(void)
+{
+    struct Reading r[MAX_READINGS];
+    int n = loadReadings(r);
+    int i;
+
+    if (n == 0) {
+        printf("\nNo readings stored yet.\n");
+        return;
+    }
+
+    printf("\n%-4s %-9s %-7s %-9s %-7s %-11s %-11s\n",
+           "ID", "Moisture", "Temp", "Humidity", "Health", "Latitude", "Longitude");
+    printf("---------------------------------------------------------------------\n");
+
+    for (i = 0; i < n; i++) {
+        printf("%-4d %-9.1f %-7.1f %-9.1f %-7d %-11.6f %-11.6f\n",
+               r[i].id, r[i].moisture, r[i].temperature,
+               r[i].humidity, r[i].health,
+               r[i].latitude, r[i].longitude); }  }
+const char *healthStatus(int health)
+{
+    if (health >= 70) {
+        return "Healthy";
+    } else if (health >= 40) {
+        return "Moderate";
+    } else {
+        return "Poor";
+    }
+}
+
+void findIrrigationAreas(void)
+{
+    struct Reading r[MAX_READINGS];
+    int n = loadReadings(r);
+    int i, found = 0;
+
+    if (n == 0) {
+        printf("\nNo readings stored yet.\n");
+        return;
+    }
+
+    printf(" AREAS REQUIRING IRRIGATION");
+
+    for (i = 0; i < n; i++) {
+        if (r[i].moisture < MOISTURE_LOW) {
+            found++;
+            printf("Reading #%d at (%.6f, %.6f) - Moisture: %.1f%% - ",
+                   r[i].id, r[i].latitude, r[i].longitude, r[i].moisture);
+
+            if (r[i].moisture < MOISTURE_CRITICAL) {
+                printf("URGENT\n");
+            } else {
+                printf("Needs water\n");
+            }
+        }
+    }
+
+    if (found == 0) {
+        printf("All areas have enough moisture. No irrigation needed.\n");
+    } else {
+        printf("Total areas needing irrigation: %d\n", found);
+    }
+}
+
+/* Write the report to any output: screen (stdout) or a file */
+void writeReport(FILE *out, struct Reading r[], int n)
+{
+    int i;
+    int needWater = 0, urgent = 0;
+    int healthy = 0, moderate = 0, poor = 0;
+    float sumMoist = 0, sumTemp = 0, sumHum = 0, sumHealth = 0;
+
+    /* Go through all readings once and collect statistics */
+    for (i = 0; i < n; i++) {
+        sumMoist  += r[i].moisture;
+        sumTemp   += r[i].temperature;
+        sumHum    += r[i].humidity;
+        sumHealth += r[i].health;
+
+        if (r[i].moisture < MOISTURE_LOW)      needWater++;
+        if (r[i].moisture < MOISTURE_CRITICAL) urgent++;
+
+        if (r[i].health >= 70)      healthy++;
+        else if (r[i].health >= 40) moderate++;
+        else                        poor++;
+    }
+
+    fprintf(out, "\n==========================================\n");
+    fprintf(out, "        FIELD MONITORING REPORT\n");
+    fprintf(out, "==========================================\n");
+    fprintf(out, "Total readings        : %d\n", n);
+    fprintf(out, "Average soil moisture : %.1f %%\n", sumMoist / n);
+    fprintf(out, "Average temperature   : %.1f C\n", sumTemp / n);
+    fprintf(out, "Average humidity      : %.1f %%\n", sumHum / n);
+    fprintf(out, "Average crop health   : %.1f / 100\n", sumHealth / n);
+
+    fprintf(out, "\n--- Crop Health Summary ---\n");
+    fprintf(out, "Healthy  (70-100) : %d\n", healthy);
+    fprintf(out, "Moderate (40-69)  : %d\n", moderate);
+    fprintf(out, "Poor     (0-39)   : %d\n", poor);
+
+    fprintf(out, "\n--- Irrigation Summary ---\n");
+    fprintf(out, "Areas needing irrigation : %d\n", needWater);
+    fprintf(out, "Urgent areas             : %d\n", urgent);
+
+    fprintf(out, "\n--- Detailed Readings ---\n");
+    fprintf(out, "%-4s %-9s %-7s %-9s %-10s %-11s %-11s %-10s\n",
+            "ID", "Moisture", "Temp", "Humidity", "Health", "Latitude", "Longitude", "Irrigate?");
+    fprintf(out, "---------------------------------------------------------------------------------\n");
+
+    for (i = 0; i < n; i++) {
+        fprintf(out, "%-4d %-9.1f %-7.1f %-9.1f %-10s %-11.6f %-11.6f %-10s\n",
+                r[i].id, r[i].moisture, r[i].temperature, r[i].humidity,
+                healthStatus(r[i].health),
+                r[i].latitude, r[i].longitude,
+                (r[i].moisture < MOISTURE_CRITICAL) ? "URGENT" :
+                (r[i].moisture < MOISTURE_LOW)      ? "Yes"    : "No");
+    }
+    fprintf(out, "==========================================\n");
+}
+
+/* Show the report on screen and also save it to a file */
+void generateReport(void)
+{
+    struct Reading r[MAX_READINGS];
+    int n = loadReadings(r);
+    FILE *fp;
+
+    if (n == 0) {
+        printf("\nNo readings stored yet. Cannot generate report.\n");
+        return;
+    }
+
+    writeReport(stdout, r, n);   /* print on screen */
+
+    fp = fopen(REPORT_FILE, "w");
+    if (fp == NULL) {
+        printf("Error: could not create report file!\n");
+        return;
+    }
+    writeReport(fp, r, n);       /* save to file */
+    fclose(fp);
+
+    printf("\nReport also saved to %s\n", REPORT_FILE);
+}
